@@ -1,0 +1,11 @@
+# Update the README with deployment info
+# Add new section about deployment
+
+pyrofork
+fastapi
+uvicorn[standard]
+python-dotenv
+aiofiles
+aiohttp
+pytz
+requests

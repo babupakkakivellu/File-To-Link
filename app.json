@@ -1,0 +1,56 @@
+{
+  "name": "File-to-Link Bot",
+  "description": "Fast Telegram file-to-link bot with 50-100 MB/s streaming speed. Same algorithm as Telegram-Stremio.",
+  "repository": "https://github.com/yourusername/file-to-link-bot",
+  "logo": "https://raw.githubusercontent.com/yourusername/file-to-link-bot/main/logo.png",
+  "keywords": ["telegram", "bot", "file-sharing", "streaming", "pyrogram"],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "env": {
+    "API_ID": {
+      "description": "Your Telegram API ID from my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Your Telegram API Hash from my.telegram.org",
+      "required": true
+    },
+    "MAIN_BOT_TOKEN": {
+      "description": "Your main bot token from @BotFather",
+      "required": true
+    },
+    "WORKER_BOTS": {
+      "description": "Comma-separated worker bot tokens (e.g., token1,token2,token3)",
+      "required": false,
+      "value": ""
+    },
+    "DUMP_CHANNEL": {
+      "description": "Your dump channel ID (e.g., -1001234567890)",
+      "required": true
+    },
+    "BASE_URL": {
+      "description": "Your app URL (will be auto-filled on deployment)",
+      "required": true,
+      "value": "https://your-app-name.herokuapp.com"
+    },
+    "PORT": {
+      "description": "Port for the web server",
+      "required": true,
+      "value": "8000"
+    },
+    "OWNER_ID": {
+      "description": "Your Telegram user ID",
+      "required": true
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "image": "heroku/python"
+}
