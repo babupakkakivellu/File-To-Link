@@ -78,7 +78,24 @@ async def file_handler(client: Client, message: Message):
         
         # Forward/copy file to dump channel
         await status_msg.edit_text("📤 Copying file to storage...")
-        dump_message = await message.copy(Config.DUMP_CHANNEL)
+        
+        # Use forward instead of copy (more reliable)
+        try:
+            forwarded = await client.forward_messages(
+                chat_id=Config.DUMP_CHANNEL,
+                from_chat_id=message.chat.id,
+                message_ids=message.id
+            )
+            # forwarded is a Message or list of Messages
+            dump_message = forwarded if isinstance(forwarded, type(message)) else forwarded[0] if isinstance(forwarded, list) else None
+            
+            if not dump_message:
+                raise Exception("Failed to forward message to dump channel")
+                
+        except Exception as e:
+            LOGGER.error(f"Error forwarding to dump channel: {e}")
+            await status_msg.edit_text(f"❌ **Error:** Could not copy file to storage. Please try again.")
+            return
         
         # Generate encrypted link
         await status_msg.edit_text("🔐 Generating download link...")
