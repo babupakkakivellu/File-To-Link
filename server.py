@@ -79,7 +79,14 @@ async def stream_handler(request: Request, id: str, name: str):
     if not decoded_data.get("msg_id"):
         raise HTTPException(status_code=400, detail="Missing message ID")
     
-    chat_id = decoded_data['chat_id']
+    # Reconstruct full chat_id by adding -100 prefix (like Telegram-Stremio)
+    # Converts 2318728082 -> -1002318728082
+    channel_id_str = str(decoded_data['chat_id'])
+    if not channel_id_str.startswith("-"):
+        chat_id = f"-100{channel_id_str}"
+    else:
+        chat_id = channel_id_str
+    
     message_id = decoded_data["msg_id"]
     
     # Get file info to validate
