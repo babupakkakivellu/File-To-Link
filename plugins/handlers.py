@@ -3,6 +3,29 @@ from pyrogram.types import Message
 from config import Config
 from encrypt import encode_string
 from logger import LOGGER
+import re
+import os
+
+
+def sanitize_filename(filename: str, max_length: int = 60) -> str:
+    """
+    Sanitize filename by removing special characters, replacing spaces with underscores,
+    and limiting length while preserving extension.
+    """
+    # Get file extension
+    name, ext = os.path.splitext(filename)
+    
+    # Remove special characters and replace spaces
+    name = re.sub(r'[^a-zA-Z0-9._-]', '_', name)
+    name = re.sub(r'_+', '_', name)  # Replace multiple underscores with single
+    name = name.strip('_')
+    
+    # Limit length
+    if len(name) > max_length:
+        name = name[:max_length]
+    
+    # Return with extension
+    return f"{name}{ext}"
 
 
 @Client.on_message(filters.command("start") & filters.private)
@@ -59,13 +82,21 @@ async def file_handler(client: Client, message: Message):
         
         # Generate encrypted link
         await status_msg.edit_text("🔐 Generating download link...")
+        
+        # Extract channel ID without -100 prefix (like Telegram-Stremio)
+        # Converts -1002318728082 -> 2318728082
+        channel_id = str(Config.DUMP_CHANNEL).replace("-100", "", 1) if str(Config.DUMP_CHANNEL).startswith("-100") else str(Config.DUMP_CHANNEL)
+        
         data = {
             "msg_id": dump_message.id,
-            "chat_id": Config.DUMP_CHANNEL
+            "chat_id": channel_id  # Store without -100 prefix
         }
         
         encrypted_id = await encode_string(data)
-        download_url = f"{Config.BASE_URL}/dl/{encrypted_id}/{file_name}"
+        
+        # Sanitize filename for URL
+        safe_filename = sanitize_filename(file_name)
+        download_url = f"{Config.BASE_URL}/dl/{encrypted_id}/{safe_filename}"
         
         # Send link to user
         response_text = f"""
@@ -129,4 +160,3 @@ async def log_handler(client: Client, message: Message):
     except Exception as e:
         await message.reply_text(f"❌ **Error:** {str(e)}")
         LOGGER.error(f"Error in /log: {e}")
-
