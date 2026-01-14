@@ -79,22 +79,45 @@ class ByteStreamer:
         LOGGER.debug(f"   Offset: {offset}, First cut: {first_part_cut}, Last cut: {last_part_cut}")
         LOGGER.debug(f"   Part count: {part_count}, Chunk size: {chunk_size}")
         
-        media_session = await self.generate_media_session(client, file_id)
+        media_session = None
         current_part = 1
-        location = await self.get_location(file_id)
-        
         total_bytes_yielded = 0  # Track total bytes
+        max_retries = 3
+        retry_delay = 1  # seconds
         
         try:
-            r = await media_session.send(
-                raw.functions.upload.GetFile(location=location, offset=offset, limit=chunk_size)
-            )
+            media_session = await self.generate_media_session(client, file_id)
+            if not media_session:
+                raise Exception("Failed to generate media session")
+            
+            location = await self.get_location(file_id)
+            
+            # Initial request with retry logic
+            r = None
+            for attempt in range(max_retries):
+                try:
+                    r = await asyncio.wait_for(
+                        media_session.send(
+                            raw.functions.upload.GetFile(location=location, offset=offset, limit=chunk_size)
+                        ),
+                        timeout=15.0  # 15 second timeout
+                    )
+                    break  # Success
+                except asyncio.TimeoutError:
+                    if attempt < max_retries - 1:
+                        LOGGER.warning(f"⚠️ Request timeout on attempt {attempt + 1}, retrying...")
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        raise Exception("Request timed out after multiple attempts")
+            
+            if not r:
+                raise Exception("Failed to get initial response from Telegram")
             
             if isinstance(r, raw.types.upload.File):
                 while True:
                     chunk = r.bytes
                     if not chunk:
-                        LOGGER.warning(f"⚠️ Empty chunk received at part {current_part}")
+                        LOGGER.debug(f"   ℹ️ Empty chunk received at part {current_part}, ending stream")
                         break
                     
                     # Log chunk details
@@ -128,19 +151,43 @@ class ByteStreamer:
                         LOGGER.debug(f"   ✅ Reached part count limit ({part_count})")
                         break
                     
-                    # Request next chunk
-                    r = await media_session.send(
-                        raw.functions.upload.GetFile(
-                            location=location, offset=offset, limit=chunk_size
-                        ),
-                    )
+                    # Request next chunk with timeout and retry
+                    r = None
+                    for attempt in range(max_retries):
+                        try:
+                            r = await asyncio.wait_for(
+                                media_session.send(
+                                    raw.functions.upload.GetFile(
+                                        location=location, offset=offset, limit=chunk_size
+                                    )
+                                ),
+                                timeout=15.0
+                            )
+                            break  # Success
+                        except asyncio.TimeoutError:
+                            if attempt < max_retries - 1:
+                                LOGGER.warning(f"⚠️ Chunk request timeout on attempt {attempt + 1}, retrying...")
+                                await asyncio.sleep(retry_delay)
+                            else:
+                                LOGGER.error(f"❌ Chunk request timed out after {max_retries} attempts")
+                                raise Exception("Request timed out")
+                    
+                    if not r:
+                        LOGGER.error("❌ Failed to get next chunk")
+                        break
             else:
                 LOGGER.error(f"❌ Unexpected response type: {type(r)}")
+                raise Exception(f"Unexpected response type from Telegram: {type(r)}")
                 
-        except (TimeoutError, AttributeError) as e:
-            LOGGER.error(f"❌ Stream error: {e}")
+        except asyncio.TimeoutError:
+            LOGGER.error(f"❌ Stream error: Request timed out")
+            raise
+        except AttributeError as e:
+            LOGGER.error(f"❌ Stream error: AttributeError - {e}", exc_info=True)
+            raise
         except Exception as e:
             LOGGER.error(f"❌ Unexpected stream error: {e}", exc_info=True)
+            raise
         finally:
             LOGGER.info(f"✅ Stream complete: {current_part-1} parts, {total_bytes_yielded} bytes total")
             WorkLoads[index] -= 1
