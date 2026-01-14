@@ -11,7 +11,7 @@ MainBot = Client(
     api_hash=Config.API_HASH,
     bot_token=Config.MAIN_BOT_TOKEN,
     plugins={"root": "plugins"},
-    sleep_threshold=100,
+    sleep_threshold=300,  # Increased to prevent disconnections
     workers=6,
     max_concurrent_transmissions=10
 )
@@ -55,7 +55,7 @@ async def start_client(client_id, token):
             api_id=Config.API_ID,
             api_hash=Config.API_HASH,
             bot_token=token,
-            sleep_threshold=100,
+            sleep_threshold=300,  # Increased to prevent disconnections
             no_updates=True,
             in_memory=True
         ).start()
