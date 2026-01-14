@@ -74,16 +74,9 @@ class ByteStreamer:
         client = self.client
         WorkLoads[index] += 1
         
-        # Debug logging
-        LOGGER.info(f"📤 Starting stream with worker bot {index}")
-        LOGGER.debug(f"   Offset: {offset}, First cut: {first_part_cut}, Last cut: {last_part_cut}")
-        LOGGER.debug(f"   Part count: {part_count}, Chunk size: {chunk_size}")
-        
         media_session = await self.generate_media_session(client, file_id)
         current_part = 1
         location = await self.get_location(file_id)
-        
-        total_bytes_yielded = 0  # Track total bytes
         
         try:
             r = await media_session.send(
@@ -94,41 +87,25 @@ class ByteStreamer:
                 while True:
                     chunk = r.bytes
                     if not chunk:
-                        LOGGER.warning(f"⚠️ Empty chunk received at part {current_part}")
                         break
-                    
-                    # Log chunk details
-                    LOGGER.debug(f"   Part {current_part}/{part_count}: Received {len(chunk)} bytes")
                     
                     # Handle different parts of the range request
                     if part_count == 1:
-                        cut_chunk = chunk[first_part_cut:last_part_cut]
-                        LOGGER.debug(f"   Single part: Cut from {first_part_cut} to {last_part_cut} = {len(cut_chunk)} bytes")
-                        yield cut_chunk
-                        total_bytes_yielded += len(cut_chunk)
+                        yield chunk[first_part_cut:last_part_cut]
                     elif current_part == 1:
-                        cut_chunk = chunk[first_part_cut:]
-                        LOGGER.debug(f"   First part: Cut from {first_part_cut} = {len(cut_chunk)} bytes")
-                        yield cut_chunk
-                        total_bytes_yielded += len(cut_chunk)
+                        yield chunk[first_part_cut:]
                     elif current_part == part_count:
-                        cut_chunk = chunk[:last_part_cut]
-                        LOGGER.debug(f"   Last part: Cut to {last_part_cut} = {len(cut_chunk)} bytes")
-                        yield cut_chunk
-                        total_bytes_yielded += len(cut_chunk)
+                        yield chunk[:last_part_cut]
                     else:
-                        LOGGER.debug(f"   Middle part: Full chunk = {len(chunk)} bytes")
                         yield chunk
-                        total_bytes_yielded += len(chunk)
 
                     current_part += 1
                     offset += chunk_size
 
                     if current_part > part_count:
-                        LOGGER.debug(f"   ✅ Reached part count limit ({part_count})")
                         break
                     
-                    # Request next chunk - no timeout, let MTProto handle it
+                    # Request next chunk
                     r = await media_session.send(
                         raw.functions.upload.GetFile(
                             location=location, offset=offset, limit=chunk_size
@@ -136,16 +113,13 @@ class ByteStreamer:
                     )
             else:
                 LOGGER.error(f"❌ Unexpected response type: {type(r)}")
-                raise Exception(f"Unexpected response type from Telegram: {type(r)}")
                 
-        except (asyncio.TimeoutError, AttributeError) as e:
-            LOGGER.error(f"❌ Stream error: {e}")
-            raise
+        except (TimeoutError, AttributeError):
+            pass
         except Exception as e:
             LOGGER.error(f"❌ Unexpected stream error: {e}", exc_info=True)
-            raise
         finally:
-            LOGGER.info(f"✅ Stream complete: {current_part-1} parts, {total_bytes_yielded} bytes total")
+            LOGGER.debug(f"Finished yielding file with {current_part-1} parts.")
             WorkLoads[index] -= 1
 
     async def generate_media_session(self, client: Client, file_id: FileId) -> Session:
