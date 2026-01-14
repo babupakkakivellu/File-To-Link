@@ -31,7 +31,7 @@ def sanitize_filename(filename: str, max_length: int = 60) -> str:
 @Client.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
     """Handle /start command"""
-    user_name = message.from_user.first_name
+    user_name = message.from_user.first_name if message.from_user else "User"
     
     welcome_text = f"""
 👋 **Hello {user_name}!**
@@ -153,9 +153,10 @@ async def file_handler(client: Client, message: Message):
             # If edit fails, send as new message
             await message.reply_text(response_text)
         
-        # Log to console
+        # Log to console (check if from_user exists for channel forwards)
+        user_id = message.from_user.id if message.from_user else "Unknown"
         LOGGER.info(f"✅ Generated link for: {file_name} ({readable_size})")
-        LOGGER.info(f"   User: {message.from_user.id}")
+        LOGGER.info(f"   User: {user_id}")
         LOGGER.info(f"   Link: {download_url}")
         
     except Exception as e:
