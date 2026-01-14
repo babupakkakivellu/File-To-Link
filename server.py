@@ -138,6 +138,7 @@ async def media_streamer(
     try:
         file_id = await tg_connect.get_file_properties(chat_id=chat_id, message_id=id)
     except Exception as e:
+        LOGGER.error(f"Error getting file properties: {e}", exc_info=True)
         raise HTTPException(status_code=404, detail=f"File not found: {e}")
     
     # Validate file hash
@@ -155,10 +156,10 @@ async def media_streamer(
     req_length = until_bytes - from_bytes + 1
     part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
 
-    # Stream the file
-    body = tg_connect.yield_file(
-        file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
-    )
+    # Log streaming parameters for debugging
+    LOGGER.info(f"📡 Streaming request: {from_bytes}-{until_bytes} of {file_size} bytes ({req_length} bytes expected)")
+    LOGGER.debug(f"   Chunk size: {chunk_size}, Offset: {offset}, Parts: {part_count}")
+    LOGGER.debug(f"   First cut: {first_part_cut}, Last cut: {last_part_cut}")
 
     # Determine filename and MIME type
     file_name = file_id.file_name or f"{secrets.token_hex(2)}.unknown"
@@ -167,10 +168,25 @@ async def media_streamer(
     if not file_id.file_name and "/" in mime_type:
         file_name = f"{secrets.token_hex(2)}.{mime_type.split('/')[1]}"
 
+    # Create error-wrapped generator
+    async def safe_stream_generator():
+        """Wrapper that catches exceptions in the generator"""
+        try:
+            async for chunk in tg_connect.yield_file(
+                file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
+            ):
+                yield chunk
+        except Exception as e:
+            LOGGER.error(f"❌ Stream generator error: {e}", exc_info=True)
+            # Generator already started, can't change status code
+            # Just stop yielding - client will see incomplete response
+            return
+
     # Build response headers
+    # IMPORTANT: Not setting Content-Length to use chunked transfer encoding
+    # This prevents crashes when stream fails partway through
     headers = {
         "Content-Type": mime_type,
-        "Content-Length": str(req_length),
         "Content-Disposition": f'inline; filename="{file_name}"',
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=3600, immutable",
@@ -181,13 +197,16 @@ async def media_streamer(
     # Add Content-Range header if range request
     if range_header:
         headers["Content-Range"] = f"bytes {from_bytes}-{until_bytes}/{file_size}"
+        headers["Content-Length"] = str(req_length)  # Safe for range requests since we know exact size
         status_code = 206  # Partial Content
     else:
+        # For full file requests, we'll use chunked encoding (no Content-Length)
+        # This prevents the "Response content shorter than Content-Length" crash
         status_code = 200  # OK
     
     return StreamingResponse(
         status_code=status_code,
-        content=body,
+        content=safe_stream_generator(),
         headers=headers,
         media_type=mime_type,
     )
