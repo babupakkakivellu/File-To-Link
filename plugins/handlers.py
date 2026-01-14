@@ -77,7 +77,10 @@ async def file_handler(client: Client, message: Message):
         readable_size = get_readable_file_size(file_size)
         
         # Forward/copy file to dump channel
-        await status_msg.edit_text("📤 Copying file to storage...")
+        try:
+            await status_msg.edit_text("📤 Copying file to storage...")
+        except Exception:
+            pass  # Ignore edit errors
         
         # Use forward instead of copy (more reliable)
         try:
@@ -86,19 +89,33 @@ async def file_handler(client: Client, message: Message):
                 from_chat_id=message.chat.id,
                 message_ids=message.id
             )
-            # forwarded is a Message or list of Messages
-            dump_message = forwarded if isinstance(forwarded, type(message)) else forwarded[0] if isinstance(forwarded, list) else None
             
-            if not dump_message:
-                raise Exception("Failed to forward message to dump channel")
+            # Handle different return types from forward_messages
+            dump_message = None
+            if forwarded:
+                if isinstance(forwarded, list):
+                    dump_message = forwarded[0] if len(forwarded) > 0 else None
+                else:
+                    # Single message returned
+                    dump_message = forwarded
+            
+            # Validate dump_message has required attributes
+            if not dump_message or not hasattr(dump_message, 'id'):
+                raise Exception("Failed to forward message to dump channel - invalid message returned")
                 
         except Exception as e:
-            LOGGER.error(f"Error forwarding to dump channel: {e}")
-            await status_msg.edit_text(f"❌ **Error:** Could not copy file to storage. Please try again.")
+            LOGGER.error(f"Error forwarding to dump channel: {e}", exc_info=True)
+            try:
+                await status_msg.edit_text(f"❌ **Error:** Could not copy file to storage. Please try again.")
+            except Exception:
+                pass  # Ignore edit errors
             return
         
         # Generate encrypted link
-        await status_msg.edit_text("🔐 Generating download link...")
+        try:
+            await status_msg.edit_text("🔐 Generating download link...")
+        except Exception:
+            pass  # Ignore edit errors
         
         # Extract channel ID without -100 prefix (like Telegram-Stremio)
         # Converts -1002318728082 -> 2318728082
@@ -130,7 +147,11 @@ async def file_handler(client: Client, message: Message):
 ⚡ **Speed:** 50-100 MB/s (from Telegram's CDN)
         """
         
-        await status_msg.edit_text(response_text)
+        try:
+            await status_msg.edit_text(response_text)
+        except Exception:
+            # If edit fails, send as new message
+            await message.reply_text(response_text)
         
         # Log to console
         LOGGER.info(f"✅ Generated link for: {file_name} ({readable_size})")
@@ -139,8 +160,11 @@ async def file_handler(client: Client, message: Message):
         
     except Exception as e:
         error_text = f"❌ **Error:** {str(e)}"
-        await status_msg.edit_text(error_text)
-        LOGGER.error(f"❌ Error processing file: {e}")
+        try:
+            await status_msg.edit_text(error_text)
+        except Exception:
+            await message.reply_text(error_text)
+        LOGGER.error(f"❌ Error processing file: {e}", exc_info=True)
 
 
 @Client.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
